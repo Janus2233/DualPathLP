@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dglp-data"
+version = "0.1.0"
+description = "动态图链接预测 —— 数据层（预处理 / 切分 / 负采样 / 指标）"
+requires-python = ">=3.11"
+dependencies = ["numpy", "pandas", "scikit-learn"]
+
+[tool.setuptools]
+packages = ["data", "data.checks"]
+package-dir = {"" = "."}
+
+[tool.pytest.ini_options]
+testpaths = ["data/checks"]
+pythonpath = ["."]
