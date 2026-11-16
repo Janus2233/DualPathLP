@@ -1,12 +1,11 @@
 """数据层命令行入口。
 
-用法（在 ``Model experiments/`` 下执行，使用指定 conda 环境解释器）::
+用法（在仓库根目录下执行）::
 
-    $py = "D:\\anaconda3\\envs\\py313_torch290_cu128\\python.exe"
-    & $py -m data.build --dataset college_msg
-    & $py -m data.build --all
-    & $py -m data.build --fast
-    & $py -m data.build --dataset sx_mathoverflow --stage preprocess
+    python -m data.build --dataset college_msg
+    python -m data.build --all
+    python -m data.build --fast
+    python -m data.build --dataset sx_mathoverflow --stage preprocess
 
 产出写入 ``runs/data/<name>/``（``runs/`` 不入库）。
 """

@@ -18,10 +18,9 @@
 - 子图：训练候选用**训练图**的邻接，验证/测试候选切**全图**邻接（照 TGN-SEAL 的做法）；
   但两者都只取 ``ts < t`` 的边（``CausalGraph`` 保证）。
 
-用法（在 ``Model experiments/`` 下）：
+用法（在仓库根目录下）：
 
-    & "D:\\anaconda3\\envs\\py313_torch290_cu128\\python.exe" -m src.train.m0_subgraph_only `
-        --dataset college_msg --input zeros --epochs 15 --tag m0_zeros
+    python -m src.train.m0_subgraph_only --dataset college_msg --input zeros --epochs 15 --tag m0_zeros
     ``collect_struct=True`` 时额外在 ``stats["struct"]`` 里放逐候选的结构统计 mean±std（6 维，
     计划2 D2 的 `stat` 组用）；默认 False ⇒ 与改造前逐位相同。
     """

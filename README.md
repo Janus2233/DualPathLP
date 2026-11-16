@@ -45,7 +45,16 @@ pip install -r requirements.txt
 | `reddit_hyperlinks` | soc-redditHyperlinks-body.txt | 跨子版块超链接 |
 | `sx_mathoverflow` | sx-mathoverflow.txt | Stack Exchange 数学问答 |
 
-文件 SHA256 与行数登记在 `data/config.py`。首次运行会自动预处理并缓存到 `runs/data/`。评测协议：按时间 70%/15%/15% 切分（分位数 0.70/0.85），另按种子 2020 留出 10% 归纳新节点并将其全部边移出训练段；训练 1:1 端点替换负采样，评测用全图固定负样本；每批 200 正 + 200 负，AP/AUC 批内计算后跨批平均。四个数据集的事件与节点属性均为 172 维全零。
+文件 SHA256 与行数登记在 `data/config.py`。训练入口读取预处理产物 `runs/data/<数据集>/`，全新克隆需先执行下节的数据构建。评测协议：按时间 70%/15%/15% 切分（分位数 0.70/0.85），另按种子 2020 留出 10% 归纳新节点并将其全部边移出训练段；训练 1:1 端点替换负采样，评测用全图固定负样本；每批 200 正 + 200 负，AP/AUC 批内计算后跨批平均。四个数据集的事件与节点属性均为 172 维全零。
+
+## 数据预处理（首次运行必需）
+
+```bash
+python -m data.build --all                    # 全部四个数据集
+python -m data.build --dataset college_msg    # 或单个数据集
+```
+
+构建含 SHA256 校验、去自环、时间排序、切分与归纳留出，产出写入 `runs/data/`（不入库）。
 
 数据层自检：
 
