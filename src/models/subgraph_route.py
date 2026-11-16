@@ -1,19 +1,3 @@
-"""子图路线的编码器（实现 D9.2 / D9.3 + D8-配置表的时间编码）。
-
-结构（与 ``docs/ARCHITECTURE.md`` §3 一致）：
-
-    z (DRNL 标号) ──► Embedding(max_z, hidden) ─┐
-    node_feat（可选，变体②的结构统计）──────────┴─► [GCNConv × L] ──► center pooling ──► MLP ──► logit
-                                                        ▲
-    edge_dt ──► time_enc(Δt) ──► MLP ──► σ ──────────┘（作为 GCNConv 的 edge_weight）
-
-要点：
-
-- **时间门控是"软"的**：边不因时间被丢弃（D9.1 已否掉硬时间窗），只按 Δt 加权。
-- 只有 ``GCNConv`` 支持 ``edge_weight``（PyG 2.7 实测；GAT/SAGE/GIN 不支持），这是 D9.3 选它的原因。
-- center pooling 取的是**候选两端**在子图中的表示（``center=[0,1]``），
-  不像 TGN-SEAL 那样误取"每个子图的第一个节点"（见 ``docs/BUGLOG.md`` R10）。
-"""
 
 from __future__ import annotations
 
@@ -31,7 +15,6 @@ __all__ = ["SubgraphRoute", "collate_subgraphs"]
 
 
 class SubgraphRoute(nn.Module):
-    """子图路线：DRNL 嵌入 + （可选）节点特征 → GCN（边时间门控）→ center pooling → logit。"""
 
     def __init__(
         self,
@@ -69,13 +52,13 @@ class SubgraphRoute(nn.Module):
 
     def forward(
         self,
-        z: torch.Tensor,             # (N,) long，DRNL 标号
-        edge_index: torch.Tensor,    # (2, E) long，子图内边（已移除目标边）
-        edge_dt: torch.Tensor,       # (E,) float，t_cand − t_edge（恒 > 0）
-        center: torch.Tensor,        # (B, 2) long，每个子图的 src/dst 在拼接后的全局下标
-        node_feat: torch.Tensor | None = None,  # (N, feat_dim) 或 None
-        pair_feat: torch.Tensor | None = None,  # (B, pair_dim) 或 None
-        return_pooled: bool = False,            # True 时额外返回池化后的链接表示 h（计划2 D2 的 emb 组）
+        z: torch.Tensor,
+        edge_index: torch.Tensor,
+        edge_dt: torch.Tensor,
+        center: torch.Tensor,
+        node_feat: torch.Tensor | None = None,
+        pair_feat: torch.Tensor | None = None,
+        return_pooled: bool = False,
     ) -> torch.Tensor:
         x = self.z_embedding(z)
         if self.feat_dim:
@@ -96,24 +79,15 @@ class SubgraphRoute(nn.Module):
 
         h_src = x[center[:, 0]]
         h_dst = x[center[:, 1]]
-        h = h_src * h_dst  # center pooling（元素积）
+        h = h_src * h_dst
         if self.pair_dim:
             assert pair_feat is not None and pair_feat.shape[1] == self.pair_dim
             h = torch.cat([h, pair_feat], dim=-1)
-        logits = self.decoder(h).squeeze(-1)  # logits
+        logits = self.decoder(h).squeeze(-1)
         return (logits, h) if return_pooled else logits
 
 
 def collate_subgraphs(subgraphs, device: torch.device, feat_dim: int = 0, pair_dim: int = 0):
-    """把一批子图拼成一次前向所需的张量（自己拼，避免 DataLoader 的 per-candidate 开销）。
-
-    Args:
-        subgraphs: 每项为 ``(nodes, edge_index, edge_dt, z, feat_or_None)`` 的列表；
-            ``pair_dim > 0`` 时每项是 6 元组，末位为 ``(pair_dim,)`` 的候选对级因果特征。
-
-    Returns:
-        ``(z, edge_index, edge_dt, center, node_feat or None, batch_ptr[, pair_feat or None])``
-    """
     z_list, feat_list = [], []
     ei_list, dt_list = [], []
     pair_list = []
@@ -131,7 +105,7 @@ def collate_subgraphs(subgraphs, device: torch.device, feat_dim: int = 0, pair_d
         dt_list.append(edge_dt)
         if pair_dim:
             pair_list.append(item[5])
-        centers.append([node_offset, node_offset + 1])  # nodes[0]=src, nodes[1]=dst
+        centers.append([node_offset, node_offset + 1])
         node_offset += n
         ptr.append(node_offset)
 
@@ -159,8 +133,6 @@ def collate_subgraphs(subgraphs, device: torch.device, feat_dim: int = 0, pair_d
 
 
 def _cat(arrays, axis: int = 0):
-    """拼接。**注意**：``edge_index`` 是 ``(2, E)``，必须沿 ``axis=1`` 拼；
-    早期版本统一用 axis=0，导致不同大小的子图拼不上（ValueError）。"""
     import numpy as np
 
     if not arrays:

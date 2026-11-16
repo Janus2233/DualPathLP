@@ -1,27 +1,20 @@
-"""自检共享工具：报告结果、断言、进程编码。
-
-自检的约定：**能主动失败**。任何检查都必须先能被一个有意的错误触发，
-否则它不构成检查（见仓库 ``AGENTS.md`` §5）。
-"""
 
 from __future__ import annotations
 
 import sys
 
-# Windows 终端默认 GBK，中文输出会乱码。在任何打印之前固定 UTF-8。
 for _stream in (sys.stdout, sys.stderr):
     try:
-        _stream.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
+        _stream.reconfigure(encoding="utf-8")
     except (AttributeError, ValueError):
         pass
 
 
 class CheckFailure(AssertionError):
-    """检查未通过。"""
+    pass
 
 
 class Checker:
-    """收集一组检查结果，最后统一汇报。"""
 
     def __init__(self, title: str) -> None:
         self.title = title

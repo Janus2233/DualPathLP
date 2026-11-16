@@ -1,14 +1,3 @@
-"""数据层命令行入口。
-
-用法（在仓库根目录下执行）::
-
-    python -m data.build --dataset college_msg
-    python -m data.build --all
-    python -m data.build --fast
-    python -m data.build --dataset sx_mathoverflow --stage preprocess
-
-产出写入 ``runs/data/<name>/``（``runs/`` 不入库）。
-"""
 
 from __future__ import annotations
 
@@ -23,7 +12,6 @@ from . import config, io, preprocess, split
 
 
 def _env_info() -> dict[str, object]:
-    """记录运行环境，便于结果回溯。"""
     import numpy as np
     import pandas as pd
     import sklearn
@@ -45,7 +33,6 @@ def build_one(
     verify: bool = True,
     quiet: bool = False,
 ) -> dict[str, object]:
-    """跑单个数据集的预处理（+ 切分）。返回汇总信息。"""
     spec = config.DATASETS[name]
     t0 = time.perf_counter()
 
@@ -150,7 +137,7 @@ def main(argv: list[str] | None = None) -> int:
             report["datasets"][name] = build_one(
                 name, stage=args.stage, verify=not args.no_verify, quiet=args.quiet
             )
-        except Exception as exc:  # noqa: BLE001 - 需要在一个报告里汇总所有失败
+        except Exception as exc:
             failures.append(name)
             report["datasets"][name] = {"dataset": name, "error": f"{type(exc).__name__}: {exc}"}
             print(f"!! {name} 失败：{type(exc).__name__}: {exc}", file=sys.stderr)

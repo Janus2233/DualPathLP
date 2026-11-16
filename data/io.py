@@ -1,7 +1,3 @@
-"""原始数据读取、格式校验与完整性校验。
-
-原始文件位于 ``dataset/``，**只读**。本模块不做任何写操作。
-"""
 
 from __future__ import annotations
 
@@ -15,21 +11,17 @@ from . import config
 
 
 class DataIntegrityError(RuntimeError):
-    """原始文件被改动、行数与登记不符，或格式非法。"""
+    pass
 
 
 @dataclass
 class RawEdges:
-    """一份原始边表的只读视图。
-
-    ``row_order`` 是边在**原始文件中**的行号，用作并列时间戳的确定性 tie-break。
-    """
 
     spec: config.DatasetSpec
-    src: np.ndarray  # int64, 原始节点 id（未重映射）
-    dst: np.ndarray  # int64, 原始节点 id（未重映射）
-    ts: np.ndarray  # float64, 原始时间戳（未归一化）
-    row_order: np.ndarray  # int64, 0-based 原始文件行号
+    src: np.ndarray
+    dst: np.ndarray
+    ts: np.ndarray
+    row_order: np.ndarray
 
     @property
     def n_edges(self) -> int:
@@ -44,7 +36,6 @@ class RawEdges:
         return len(np.unique(np.concatenate([self.src, self.dst])))
 
     def is_ts_sorted(self) -> bool:
-        """原始文件是否已按时间戳非降序排列。"""
         return bool(np.all(np.diff(self.ts) >= 0))
 
 
@@ -60,7 +51,6 @@ def sha256_of(path: Path, chunk: int = 1 << 20) -> str:
 
 
 def verify_dataset(spec: config.DatasetSpec) -> str:
-    """校验文件存在且 SHA256 与登记值一致；返回实际摘要。"""
     path = spec.path
     if not path.is_file():
         raise DataIntegrityError(f"原始数据文件不存在：{path}")
@@ -74,17 +64,12 @@ def verify_dataset(spec: config.DatasetSpec) -> str:
 
 
 def read_raw(spec: config.DatasetSpec, *, verify: bool = True) -> RawEdges:
-    """读取原始三列文本 ``源节点 目标节点 时间戳``。
-
-    与参考实现一致使用 ``np.loadtxt``（空白分隔、无表头）。
-    TGN-SEAL 的 txt 管线：``utils/preprocess_txt_data.py``
-    """
     if verify:
         verify_dataset(spec)
 
     try:
         arr = np.loadtxt(spec.path, dtype=np.float64, ndmin=2)
-    except ValueError as exc:  # 列数不一致 / 非数值
+    except ValueError as exc:
         raise DataIntegrityError(f"{spec.filename} 无法按三列数值解析：{exc}") from exc
 
     if arr.shape[1] != 3:
@@ -96,7 +81,6 @@ def read_raw(spec: config.DatasetSpec, *, verify: bool = True) -> RawEdges:
     if nan_rows:
         raise DataIntegrityError(f"{spec.filename} 有 {nan_rows} 行含 NaN/Inf。")
 
-    # 节点 id 必须是整数值
     node_part = arr[:, :2]
     if not np.all(node_part == np.floor(node_part)):
         bad = int(np.count_nonzero(node_part != np.floor(node_part)))
@@ -112,7 +96,6 @@ def read_raw(spec: config.DatasetSpec, *, verify: bool = True) -> RawEdges:
 
 
 def describe(raw: RawEdges) -> dict[str, object]:
-    """汇总一份原始边表的基本事实，用于自检与文档核对。"""
     ts = raw.ts
     vals, counts = np.unique(ts, return_counts=True)
     tied_rows = int(counts[counts > 1].sum())

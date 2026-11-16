@@ -1,8 +1,3 @@
-"""原始数据完整性自检。
-
-验证：SHA256 与登记值一致、行数一致、格式为三列数值、节点 id 为整数。
-任何一项失败都说明原始数据被改动过，必须停下来查清原因。
-"""
 
 from __future__ import annotations
 
@@ -11,7 +6,7 @@ import sys
 
 import numpy as np
 
-if __package__ in (None, ""):  # 允许 python data/checks/xxx.py 直接运行
+if __package__ in (None, ""):
     sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[2]))
     from data import config, io
     from data.checks._common import Checker

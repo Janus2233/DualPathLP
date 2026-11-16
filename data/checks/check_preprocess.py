@@ -1,13 +1,3 @@
-"""预处理产物自检。
-
-验证 TGB 三件套的格式契约（见 ``data/README.md`` §2）：
-
-- ``ml_<name>.csv`` 列名/列序为 ``,u,i,ts,label,idx``，与参考实现一致
-- 节点 id 与边 id 均为 1-based（0 行留给 padding）
-- 无自环；``ts`` 单调不减；``label`` 恒为 1.0
-- ``ml_<name>.npy`` 形状 ``(E+1, 172)``、``ml_<name>_node.npy`` 形状 ``(Nmax+1, 172)``
-- 原始文件未被覆写（SHA256 复核）
-"""
 
 from __future__ import annotations
 
@@ -27,7 +17,6 @@ else:
     from .. import preprocess as pre_mod
     from ._common import Checker
 
-#: 与参考实现一致的表头（首列为 pandas 索引列）。
 EXPECTED_COLUMNS = ["Unnamed: 0", "u", "i", "ts", "label", "idx"]
 
 
@@ -52,12 +41,10 @@ def run(names: list[str], *, check_raw_untouched: bool = True) -> bool:
         idx = df["idx"].to_numpy(np.int64)
         label = df["label"].to_numpy(np.float64)
 
-        # --- id 基与自环 ---------------------------------------------------- #
         c.equal("节点 id 最小值为 1（1-based）", int(min(u.min(), i.min())), config.ID_BASE)
         c.equal("边 id 最小值为 1（1-based）", int(idx.min()), config.ID_BASE)
         c.check("无自环", not bool(np.any(u == i)), f"自环数={int(np.count_nonzero(u == i))}")
 
-        # --- 时间与标签 ----------------------------------------------------- #
         c.check(
             "ts 单调不减",
             bool(np.all(np.diff(ts) >= 0)),
@@ -66,14 +53,12 @@ def run(names: list[str], *, check_raw_untouched: bool = True) -> bool:
         c.check("label 恒为 1.0", bool(np.all(label == 1.0)))
         c.check("ts 无缺失", bool(np.isfinite(ts).all()))
 
-        # --- 边 id 连续且唯一 ----------------------------------------------- #
         c.check("边 id 唯一", len(np.unique(idx)) == len(idx))
         c.check(
             "边 id 连续 1..E",
             bool(np.array_equal(np.sort(idx), np.arange(1, len(idx) + 1, dtype=np.int64))),
         )
 
-        # --- 特征文件形状 --------------------------------------------------- #
         edge_feat = np.load(paths["edge_feat"])
         node_feat = np.load(paths["node_feat"])
         c.equal("边特征形状 (E+1, 172)", tuple(edge_feat.shape), (len(df) + 1, config.EDGE_FEAT_DIM))
@@ -85,8 +70,6 @@ def run(names: list[str], *, check_raw_untouched: bool = True) -> bool:
         c.check("边特征第 0 行为 padding（全 0）", bool(np.all(edge_feat[0] == 0)))
         c.check("节点特征第 0 行为 padding（全 0）", bool(np.all(node_feat[0] == 0)))
 
-        # --- tie-break 确定性 ----------------------------------------------- #
-        # 并列时间戳的块内顺序必须只由原始行号决定：重跑一次预处理应当逐位一致。
         try:
             spec = config.DATASETS[name]
             raw = io.read_raw(spec, verify=False)
@@ -97,15 +80,14 @@ def run(names: list[str], *, check_raw_untouched: bool = True) -> bool:
                 bool(np.array_equal(pe2.src, u) and np.array_equal(pe2.dst, i)),
                 "重跑后的 (u,i) 与已存产物不一致",
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             c.check("预处理可复现（重跑结果逐位一致）", False, f"{type(exc).__name__}: {exc}")
 
-        # --- 原始文件未被改动 ----------------------------------------------- #
         if check_raw_untouched:
             try:
                 io.verify_dataset(config.DATASETS[name])
                 c.check("原始文件 SHA256 未变", True)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 c.check("原始文件 SHA256 未变", False, str(exc))
 
         ok_all &= c.report()

@@ -1,12 +1,3 @@
-"""一键跑全部数据层自检。
-
-在 ``Model experiments/`` 下执行::
-
-    & $py -m data.checks.run_all --fast      # 小数据集，秒级
-    & $py -m data.checks.run_all             # 全部四个
-
-退出码 0 表示全部通过；非 0 表示有检查失败（**不要在大规模训练前忽略它**）。
-"""
 
 from __future__ import annotations
 

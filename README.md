@@ -1,70 +1,72 @@
 # DualPathLP
 
-论文《基于双路线图神经网络的动态网络链路预测》的模型与数据集代码。本仓库包含复现论文主表（表 3）与消融实验所需的全部模型代码、数据层（预处理 / 切分 / 负采样 / 指标）以及四个公开数据集的原始文件。
+Code and datasets for the paper *"Dynamic Network Link Prediction Based on a Dual-Route Graph Neural Network"* (基于双路线图神经网络的动态网络链路预测).
 
-## 仓库结构
+This repository contains the model, the data layer (preprocessing / temporal splitting / negative sampling / metrics), and the raw files of four public datasets — everything needed to reproduce the main results (Table 3) and the ablation studies.
+
+## Repository structure
 
 ```
 ├── src/
-│   ├── models/          # 模型：节点路线、子图路线、门控融合、时间编码、路线校准
-│   │   ├── dual_route.py        # 双路线门控融合
-│   │   ├── node_route.py        # 节点路线（GRU 记忆 + 时序图注意力）
-│   │   ├── subgraph_route.py    # 子图路线（DRNL 标记 + 加权 GCN + 双端乘性读出）
-│   │   ├── time_encoding.py     # 余弦时间编码
-│   │   └── route_calibration.py # 路线分数校准（可选）
-│   ├── graph/           # 因果封闭子图构造、候选对因果特征
+│   ├── models/          # node route, subgraph route, gated fusion, time encoding, route calibration
+│   │   ├── dual_route.py        # dual-route gated fusion
+│   │   ├── node_route.py        # node route (GRU memory + temporal graph attention)
+│   │   ├── subgraph_route.py    # subgraph route (DRNL labeling + weighted GCN + multiplicative readout)
+│   │   ├── time_encoding.py     # cosine time encoding
+│   │   └── route_calibration.py # optional route-score calibration
+│   ├── graph/           # causal enclosing-subgraph construction, candidate-pair causal features
 │   └── train/
-│       ├── m1_dual_route.py     # 主训练/评测入口（融合与单路线消融）
-│       └── m0_subgraph_only.py  # 仅子图路线入口
-├── data/                # 数据层：加载、预处理、时间切分、归纳留出、负采样、AP/AUC
-│   └── checks/          # 数据层自检（完整性/切分/负采样/指标/预处理）
-├── dataset/             # 四个数据集原始文件（SNAP 公开数据）
-└── pyproject.toml       # 数据层包配置（dglp-data）
+│       ├── m1_dual_route.py     # main training / evaluation entry (fusion and single-route ablations)
+│       └── m0_subgraph_only.py  # subgraph-route-only entry
+├── data/                # data layer: loading, preprocessing, temporal split, inductive holdout, negatives, AP/AUC
+│   └── checks/          # data-layer self-checks (integrity / splits / negatives / metrics / preprocessing)
+├── dataset/             # raw files of the four datasets (public SNAP data)
+└── pyproject.toml       # data-layer package config (dglp-data)
 ```
 
-## 环境安装
+## Installation
 
-Python ≥ 3.11。
+Python ≥ 3.11.
 
 ```bash
 pip install -r requirements.txt
 ```
 
-- GPU 可选：论文实验在单块 6 GB 显存 GPU 上完成；CPU 可运行但更慢（`--device cpu`）。
-- 需要 GPU 时请先按 [pytorch.org](https://pytorch.org) 指引安装与驱动匹配的 CUDA 版 torch，再安装 `torch_geometric`（≥ 2.6 的 GCNConv 使用原生 torch scatter，无需另装 torch_scatter/torch_sparse）。
-- 论文实验环境（conda 环境实测）：Python 3.13、torch 2.9.0+cu128、torch_geometric 2.7.0、numpy 2.4.4、pandas 3.0.2、scikit-learn 1.9.0。
+- GPU is optional: the paper experiments ran on a single 6 GB GPU; CPU works but is slower (`--device cpu`).
+- For GPU use, install a CUDA build of torch matching your driver first ([pytorch.org](https://pytorch.org)), then `torch_geometric` (≥ 2.6; GCNConv uses native torch scatter, so `torch_scatter` / `torch_sparse` are not required).
+- Tested environment: Python 3.13, torch 2.9.0+cu128, torch_geometric 2.7.0, numpy 2.4.4, pandas 3.0.2, scikit-learn 1.9.0.
 
-## 数据集
+## Datasets
 
-`dataset/` 已包含四个公开连续时间动态图的原始文件（来源：SNAP）：
+`dataset/` ships the raw files of four public continuous-time dynamic graphs (source: SNAP):
 
-| 注册名 | 文件 | 说明 |
+| Registry name | File | Description |
 |---|---|---|
-| `college_msg` | CollegeMsg.txt | 加州大学欧文分校学生在线消息 |
-| `email_eu_core` | email-Eu-core-temporal.txt | 欧洲研究机构内部邮件 |
-| `reddit_hyperlinks` | soc-redditHyperlinks-body.txt | 跨子版块超链接 |
-| `sx_mathoverflow` | sx-mathoverflow.txt | Stack Exchange 数学问答 |
+| `college_msg` | CollegeMsg.txt | online messages between UC Irvine students |
+| `email_eu_core` | email-Eu-core-temporal.txt | internal emails of a European research institution |
+| `reddit_hyperlinks` | soc-redditHyperlinks-body.txt | cross-subreddit hyperlinks |
+| `sx_mathoverflow` | sx-mathoverflow.txt | Stack Exchange math Q&A |
 
-文件 SHA256 与行数登记在 `data/config.py`。训练入口读取预处理产物 `runs/data/<数据集>/`，全新克隆需先执行下节的数据构建。评测协议：按时间 70%/15%/15% 切分（分位数 0.70/0.85），另按种子 2020 留出 10% 归纳新节点并将其全部边移出训练段；训练 1:1 端点替换负采样，评测用全图固定负样本；每批 200 正 + 200 负，AP/AUC 批内计算后跨批平均。四个数据集的事件与节点属性均为 172 维全零。
+SHA256 checksums and row counts are registered in `data/config.py`. Evaluation protocol: chronological 70%/15%/15% split (time quantiles 0.70 / 0.85); an additional 10% of test-period nodes are held out as inductive new nodes (seed 2020) and all their edges are removed from training; 1:1 endpoint-replacement negative sampling for training, fixed full-graph negatives for evaluation; batches of 200 positive + 200 negative candidates; AP/AUC computed per batch and averaged across batches. Event and node features are 172-dimensional zero vectors on all four datasets.
 
-## 数据预处理（首次运行必需）
+## Data preprocessing (required on a fresh clone)
 
 ```bash
-python -m data.build --all                    # 全部四个数据集
-python -m data.build --dataset college_msg    # 或单个数据集
+python -m data.build --all                    # all four datasets
+python -m data.build --dataset college_msg    # or a single dataset
 ```
 
-构建含 SHA256 校验、去自环、时间排序、切分与归纳留出，产出写入 `runs/data/`（不入库）。
+The build performs SHA256 verification, self-loop removal, timestamp sorting, splitting and inductive holdout. Outputs are written to `runs/data/` (not tracked by git).
 
-数据层自检：
+Data-layer self-checks:
 
 ```bash
 python -m data.checks.run_all
 ```
 
-## 复现主表（表 3）
+## Reproducing the main table (Table 3)
 
-旗舰配置（CollegeMsg，种子 42，确定性模式）：
+Flagship configuration (CollegeMsg, seed 42, deterministic mode):
 
 ```bash
 python -m src.train.m1_dual_route \
@@ -73,52 +75,52 @@ python -m src.train.m1_dual_route \
   --seed 42 --deterministic --tag repro_college_s42
 ```
 
-其余三个数据集仅子图邻域与训练日程不同（其余超参数与上式一致，均为默认值）：
+The other three datasets differ only in subgraph neighborhood and training schedule (all other hyperparameters are defaults, as above):
 
 ```bash
-python -m src.train.m1_dual_route --dataset email_eu_core    --route fused --pair-features --hop 2 --window-frac 0.05 --sub-layers 3 --lr 0.003 --epochs 15 --seed 42 --deterministic --tag repro_email_s42
+python -m src.train.m1_dual_route --dataset email_eu_core     --route fused --pair-features --hop 2 --window-frac 0.05 --sub-layers 3 --lr 0.003 --epochs 15 --seed 42 --deterministic --tag repro_email_s42
 python -m src.train.m1_dual_route --dataset reddit_hyperlinks --route fused --pair-features --hop 2 --window-frac 0.05 --sub-layers 3 --lr 0.003 --epochs 15 --seed 42 --deterministic --tag repro_reddit_s42
 python -m src.train.m1_dual_route --dataset sx_mathoverflow   --route fused --pair-features --hop 2 --window-frac 0.05 --sub-layers 3 --lr 0.003 --epochs 15 --seed 42 --deterministic --tag repro_sx_s42
 ```
 
-- 八种子结果：`--seed` 依次取 42–49，对 `test.fused.average_precision` 取均值±样本标准差。
-- 单路线对照（表 4）：其余参数不变，`--route node` 或 `--route sub`。
-- 结果写入 `runs/<tag>/summary.json`（`test.fused / test.node / test.sub` 各含 `average_precision` 与 `roc_auc`）；加 `--gate-stats` 另输出门控统计 `gate_stats.json`。
-- CPU 运行加 `--device cpu`。
+- Eight-seed results: run with `--seed 42` through `49` and report mean ± sample standard deviation of `test.fused.average_precision`.
+- Single-route controls (Table 4): keep all other flags, use `--route node` or `--route sub`.
+- Results are written to `runs/<tag>/summary.json` (`test.fused / test.node / test.sub`, each with `average_precision` and `roc_auc`); add `--gate-stats` to also emit gate statistics (`gate_stats.json`).
+- For CPU runs add `--device cpu`.
 
-预期主表 AP（八种子均值±样本标准差）：
+Expected main-table AP (eight-seed mean ± sample std):
 
-| 数据集 | DualPathLP（门控融合） |
+| Dataset | DualPathLP (gated fusion) |
 |---|---|
 | CollegeMsg | 0.9657 ± 0.0006 |
 | email-Eu-core | 0.9858 ± 0.0001 |
 | RedditHyperlinks | 0.9753 ± 0.0087 |
 | sx-mathoverflow | 0.9813 ± 0.0046 |
 
-## 复现消融与对照实验
+## Ablations and controls
 
-在旗舰命令基础上追加开关：
+Add the following flags to the flagship command:
 
-| 实验 | 开关 |
+| Experiment | Flag |
 |---|---|
-| 因果统计量 → 全零输入（表 5） | `--input zeros` |
-| 去除候选对因果特征（表 5） | 去掉 `--pair-features` |
-| 候选对特征逐维消融 | `--pair-dims aa,jac` 等任意组合 |
-| 静默移出门控上下文（表 5） | `--ctx-no-dt` |
-| 静默加入节点解码器（表 5） | 默认即含；对照用 `--no-decoder-dt` |
-| 常数门控对照（表 5 / 图 4b） | `--const-gate` |
-| 关闭子图边时间门控（§4.4.2） | `--no-edge-gate` |
-| 跨路线一致性正则（§4.4.2） | `--lambda-cons 0.05`（默认 0 关闭） |
-| 严格负采样审计（表 6） | `--strict-negatives` |
+| Causal statistics → zero input (Table 5) | `--input zeros` |
+| Remove candidate-pair causal features (Table 5) | drop `--pair-features` |
+| Per-dimension ablation of pair features | `--pair-dims aa,jac` (any subset) |
+| Remove staleness from gate context (Table 5) | `--ctx-no-dt` |
+| Node decoder without staleness (Table 5 control) | `--no-decoder-dt` |
+| Constant-gate control (Table 5 / Fig. 4b) | `--const-gate` |
+| Disable subgraph edge-time gating (§4.4.2) | `--no-edge-gate` |
+| Cross-route consistency regularizer (§4.4.2) | `--lambda-cons 0.05` (default 0 = off) |
+| Strict negative-sampling audit (Table 6) | `--strict-negatives` |
 
-## 与论文一致的实现口径（默认保持，勿随意更改）
+## Implementation notes (frozen caliber reported in the paper — keep defaults)
 
-以下三点为论文第 5 章如实报告的冻结口径，默认标志位与之对齐；改动会改变全部已冻结结果：
+The following three points are the frozen implementation caliber reported in Section 5 of the paper. Default flags match it; changing them changes all frozen results:
 
-1. 节点路线 GRU 记忆更新在无梯度路径下执行（606,316 报告参数中 318,888 个不参与训练）；修复标志 `--memory-grad onestep` 默认关。
-2. 门控上下文前两维（子图规模、边节点比）由批级量填充；修复标志 `--ctx-per-candidate` 默认关。
-3. 子图边表对每条交互只登记一条有向边，图卷积沿该方向传递消息。
+1. Node-route GRU memory updates run under a no-grad path (318,888 of the 606,316 reported parameters are not trained); the fix flag `--memory-grad onestep` is off by default.
+2. The first two dimensions of the gate context (subgraph size, edge-to-node ratio) are filled with batch-level quantities; the fix flag `--ctx-per-candidate` is off by default.
+3. The subgraph edge table registers one directed edge per interaction; graph convolution propagates along that direction only.
 
-## 引用
+## Citation
 
-《基于双路线图神经网络的动态网络链路预测》（DualPathLP）。
+*"Dynamic Network Link Prediction Based on a Dual-Route Graph Neural Network"* (DualPathLP).

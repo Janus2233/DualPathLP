@@ -1,29 +1,3 @@
-"""M0 —— 子图路线**单独**跑：三种输入特征对照（回答 ``ARCHITECTURE.md`` §7.1 的空缺）。
-
-实验目的（对应 ``docs/ARCHITECTURE.md`` §7.1）：
-
-    D10.2 把"节点路线嵌入注入子图节点特征"默认关掉后，子图 GCN 该吃什么输入？
-    本脚本用最小代价先量出两个候选的差距：
-      --input zeros  ：子图节点特征全零，只有 DRNL 嵌入 + 边时间门控
-      --input struct ：额外拼上因果结构统计（度 / 时间衰减度 / 陈旧度，见 D8.1 的候选②）
-
-    第三个候选（只读节点路线记忆）需要节点路线存在，本脚本**不实现**，留到节点路线落地后测。
-
-严格遵循的协议（D2/D4，冻结）：
-
-- 训练段 = ``splits`` 的 ``train_*``；验证/测试同数据层产物。
-- 训练负采样：训练期节点池、目标端替换、1:1（``data.negatives.make_train_sampler``）。
-- 评测负采样：**全图**池、固定种子（val=0 / test=2），每轮评测前 ``reset_random_state()``。
-- 指标：``data.metrics.get_link_prediction_metrics`` + ``aggregate_batch_metrics``（每 batch 先算再平均）。
-- 子图：训练候选用**训练图**的邻接，验证/测试候选切**全图**邻接（照 TGN-SEAL 的做法）；
-  但两者都只取 ``ts < t`` 的边（``CausalGraph`` 保证）。
-
-用法（在仓库根目录下）：
-
-    python -m src.train.m0_subgraph_only --dataset college_msg --input zeros --epochs 15 --tag m0_zeros
-    ``collect_struct=True`` 时额外在 ``stats["struct"]`` 里放逐候选的结构统计 mean±std（6 维，
-    计划2 D2 的 `stat` 组用）；默认 False ⇒ 与改造前逐位相同。
-    """
 
 from __future__ import annotations
 
@@ -44,14 +18,11 @@ from src.graph.causal_subgraph import CausalGraph, drnl_labels, structural_featu
 from src.graph.pair_features import PAIR_DEFAULT_SPEC, PAIR_DIM, pair_features, parse_dims
 from src.models.subgraph_route import SubgraphRoute, collate_subgraphs
 
-ROOT = Path(__file__).resolve().parents[2]  # Model experiments/
+ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = ROOT / "runs" / "data"
 RUNS_DIR = ROOT / "runs" / "m0"
 
 
-# ---------------------------------------------------------------------------- #
-# 数据加载
-# ---------------------------------------------------------------------------- #
 
 
 def load_processed(dataset: str):
@@ -75,24 +46,15 @@ def load_processed(dataset: str):
     return out
 
 
-# ---------------------------------------------------------------------------- #
-# 子图批构造
-# ---------------------------------------------------------------------------- #
 
 
 def build_subgraphs(graph: CausalGraph, src, dst, ts, hop, m, max_nodes,
                     input_mode: str, tau: float, max_z: int, window: float | None = None,
                     pair_dim: int = 0, pair_dims=None, collect_struct: bool = False):
-    """把一批候选边变成子图列表；同时返回自检统计（用来断言因果性）。
-
-    ``window`` 非空时启用**硬时间窗**（D9.1 修订后的主线）：只保留 ``[t - window, t)`` 内的边。
-    ``pair_dim > 0`` 时额外算**候选对级因果特征**（`src/graph/pair_features.py`），
-    并作为 6 元组末位放进每个子图项。
-    """
     subs = []
     stats = {"nodes": [], "edges": [], "min_dt": np.inf, "target_edge_present": 0}
     if collect_struct:
-        stats["struct"] = []      # 计划2 D2 的 stat 组用；不选该组时连键都不建（默认路径逐位不变）
+        stats["struct"] = []
     for u, v, t in zip(np.asarray(src).tolist(), np.asarray(dst).tolist(), np.asarray(ts).tolist()):
         nodes, ei, edt, center = graph.extract(u, v, t, hop=hop, m=m, max_nodes=max_nodes,
                                                 window=window)
@@ -112,8 +74,6 @@ def build_subgraphs(graph: CausalGraph, src, dst, ts, hop, m, max_nodes,
         else:
             subs.append((nodes, ei, edt, z, feat))
         if collect_struct:
-            # 计划2 D2 的 `stat` 组：把该候选子图内的 3 维结构统计汇总成 mean±std（6 维），
-            # 供**融合门**判断「这个子图有多结构化」。默认 collect_struct=False ⇒ 默认路径完全不变。
             if feat is not None and len(feat):
                 _sm = feat.mean(axis=0)
                 _ss = feat.std(axis=0)
@@ -138,11 +98,6 @@ def run_model(model, subs, device, feat_dim, pair_dim=0):
 
 
 def run_model_pooled(model, subs, device, feat_dim, pair_dim=0):
-    """同 `run_model`，但同时返回**池化后的链接表示**（计划2 D2 的 `emb` 组用）。
-
-    单列一个函数而不是给 `run_model` 加开关：`run_model` 是 m0/m1 共用的默认路径，
-    保持它一字不动最安全（默认路径逐位不变的第一道保险）。
-    """
     out = collate_subgraphs(subs, device, feat_dim=feat_dim, pair_dim=pair_dim)
     if pair_dim:
         z, ei, dt, center, feat, _, pair = out
@@ -150,9 +105,6 @@ def run_model_pooled(model, subs, device, feat_dim, pair_dim=0):
     z, ei, dt, center, feat, _ = out
     return model(z, ei, dt, center, feat, return_pooled=True)
 
-# ---------------------------------------------------------------------------- #
-# 评测（协议见模块 docstring）
-# ---------------------------------------------------------------------------- #
 
 
 @torch.no_grad()
@@ -187,9 +139,6 @@ def evaluate(model, graph, sampler, src, dst, ts, *, hop, m, max_nodes,
     return data_metrics.aggregate_batch_metrics(batch_metrics)
 
 
-# ---------------------------------------------------------------------------- #
-# 主流程
-# ---------------------------------------------------------------------------- #
 
 
 def main() -> int:
@@ -242,7 +191,7 @@ def main() -> int:
     d = load_processed(a.dataset)
     n_nodes = d["n_nodes"]
     train_span = float(d["train_ts"].max() - d["train_ts"].min())
-    tau = train_span / max(len(d["train_ts"]) - 1, 1)  # 平均交互间隔（特征尺度）
+    tau = train_span / max(len(d["train_ts"]) - 1, 1)
     window = a.window_frac * train_span if a.window_frac > 0 else None
     feat_dim = 3 if a.input == "struct" else 0
     pair_dims = parse_dims(a.pair_dims)
@@ -272,10 +221,8 @@ def main() -> int:
     opt = torch.optim.Adam(model.parameters(), lr=a.lr)
     criterion = torch.nn.BCEWithLogitsLoss()
 
-    # 训练候选（可选过拟合自检）
     tr_src, tr_dst, tr_ts = d["train_src"], d["train_dst"], d["train_ts"]
     if a.overfit:
-        # **随机**子集：取最早的 n 条边会得到“没有历史 → 子图为空”的退化物（正负输入完全相同）
         _rng = np.random.RandomState(a.seed)
         _sel = np.sort(_rng.choice(len(tr_src), size=min(a.overfit, len(tr_src)), replace=False))
         tr_src, tr_dst, tr_ts = tr_src[_sel], tr_dst[_sel], tr_ts[_sel]
@@ -305,7 +252,6 @@ def main() -> int:
                                                 window=window, pair_dim=pair_dim,
                                                 pair_dims=pair_dims)
             if epoch == 1 and lo == 0:
-                # 因果性自检：子图内每条边都必须严格早于候选时刻
                 assert stats_p["min_dt"] > 0 and stats_n["min_dt"] > 0, "出现 Δt ≤ 0 的边（泄漏）"
                 assert stats_p["target_edge_present"] == 0, "目标边未被移除"
                 print(f"[{tag}] 首个子图批：pos 节点均值 {stats_p['nodes_mean']:.1f}"
@@ -326,7 +272,6 @@ def main() -> int:
             opt.step()
             losses.append(float(loss.detach()))
             seen += len(pos_subs) + len(neg_subs)
-            # 累计训练集的正/负概率，用于每轮算训练集 AP（只看 loss 会看不出“到底学没学到”）
             with torch.no_grad():
                 _p = torch.sigmoid(logits).detach().cpu().numpy()
             epoch_pos.extend(_p[: len(pos_subs)].tolist())
@@ -357,7 +302,6 @@ def main() -> int:
                            pair_dims=pair_dims)
             rec["val"] = val
             msg += f"  | val {val} ({time.perf_counter()-t1:.1f}s)"
-            # 指标字典的键是 average_precision / roc_auc（见 data/metrics.py）
             score = val.get("average_precision", val.get("ap", val.get("AP", 0.0)))
             if score > best_val_ap:
                 best_val_ap = score

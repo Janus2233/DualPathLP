@@ -1,12 +1,3 @@
-"""预处理：排序 → 丢自环 → 全图 1-based 重映射 → 产出 TGB 三件套。
-
-严格对齐参考实现，不自行发明步骤或参数：
-
-- 丢自环：``参考模型/TGN-SEAL/utils/preprocess_csv_data.py:16-17`` (``if i == u: continue``)
-- 排序：  ``参考模型/TGN-SEAL/utils/preprocess_txt_data.py:126`` (``df.sort_values(by="ts")``)
-- 重映射：``参考模型/TGN-SEAL/utils/preprocess_csv_data.py:41-56``（``rename`` + 整体 +1，1-based）
-- 特征：  ``参考模型/TAMI/utils/DataLoader.py:81-83``（172 维零填充）
-"""
 
 from __future__ import annotations
 
@@ -22,19 +13,18 @@ from .io import RawEdges
 
 @dataclass
 class ProcessedEdges:
-    """预处理结果。``src``/``dst`` 是 **1-based** 的重映射 id，0 保留给 padding。"""
 
     name: str
-    src: np.ndarray  # int64, 1-based
-    dst: np.ndarray  # int64, 1-based
-    ts: np.ndarray  # float64
-    edge_idx: np.ndarray  # int64, 1-based
-    label: np.ndarray  # float64, 恒为 1.0
-    orig_src: np.ndarray  # int64, 原始 id（诊断用）
+    src: np.ndarray
+    dst: np.ndarray
+    ts: np.ndarray
+    edge_idx: np.ndarray
+    label: np.ndarray
+    orig_src: np.ndarray
     orig_dst: np.ndarray
-    raw_row_order: np.ndarray  # int64, 原始文件行号（诊断用）
-    n_nodes_raw: int  # 重映射前的唯一节点数
-    n_max_id: int  # 重映射后的最大 id（= n_nodes_raw，因为 1-based）
+    raw_row_order: np.ndarray
+    n_nodes_raw: int
+    n_max_id: int
     stats: dict[str, object]
 
     @property
@@ -42,7 +32,6 @@ class ProcessedEdges:
         return int(self.src.shape[0])
 
     def to_frame(self) -> pd.DataFrame:
-        """与 TGB/DyGLib 完全一致的列布局（``,u,i,ts,label,idx``）。"""
         return pd.DataFrame(
             {
                 "u": self.src,
@@ -57,45 +46,24 @@ class ProcessedEdges:
 def build_id_mapping(
     orig_src: np.ndarray, orig_dst: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """全图 id 重映射：``np.unique`` 升序 → 0-based → +1（1-based）。
-
-    与 ``TGN-SEAL/preprocess_csv_data.py:41-56`` 的 ``rename`` 等价。
-    这是**传导式（transductive）**重映射：映射表建立在整个图之上，
-    与参考实现一致（见 data/README.md §1）。
-
-    Returns:
-        (重映射后的 src, 重映射后的 dst, 升序的唯一原始 id 数组)
-    """
     uniq = np.unique(np.concatenate([orig_src, orig_dst]))
 
     def remap(x: np.ndarray) -> np.ndarray:
-        # 用 searchsorted 做向量化查询，等价于逐元素查 dict，但快得多。
-        # 传入的 x 一定来自本图，故 pos 必然命中，无需处理未找到的情况。
         pos = np.searchsorted(uniq, x)
         return (pos + config.ID_BASE).astype(np.int64)
 
     return remap(orig_src), remap(orig_dst), uniq
 
 def preprocess(raw: RawEdges) -> ProcessedEdges:
-    """把一份原始边表变成 TGB 格式的边表。
-
-    步骤与参考实现一致：
-      1. 丢弃自环
-      2. 按 ``ts`` 排序；并列时以原始行号 tie-break（可复现性要求，见 README §3）
-      3. 全图重映射到 1-based 连续 id
-      4. ``idx`` 从 1 开始（1-based）
-    """
     orig_src, orig_dst = raw.src, raw.dst
     ts, row_order = raw.ts, raw.row_order
 
     n_raw = raw.n_edges
-    keep = orig_src != orig_dst  # 丢自环
+    keep = orig_src != orig_dst
     n_self_loops = int(n_raw - np.count_nonzero(keep))
 
     s, d, t, r = orig_src[keep], orig_dst[keep], ts[keep], row_order[keep]
 
-    # 排序：ts 升序，并列按原始行号升序。lexsort 的主键在**最后**，
-    # 因此先用 row_order（次键），再用 t（主键）。
     order = np.lexsort((r, t))
     s, d, t, r = s[order], d[order], t[order], r[order]
 
@@ -103,7 +71,6 @@ def preprocess(raw: RawEdges) -> ProcessedEdges:
     if n_kept == 0:
         raise ValueError(f"{raw.spec.name} 丢弃自环后没有剩余边。")
 
-    # 全图重映射到 1-based
     s_mapped, d_mapped, uniq_nodes = build_id_mapping(s, d)
     n_nodes_raw = int(uniq_nodes.shape[0])
     edge_idx = np.arange(1, n_kept + 1, dtype=np.int64)
@@ -120,11 +87,10 @@ def preprocess(raw: RawEdges) -> ProcessedEdges:
         orig_dst=d,
         raw_row_order=r,
         n_nodes_raw=n_nodes_raw,
-        n_max_id=n_nodes_raw,  # 1-based => 最大 id == 节点数
+        n_max_id=n_nodes_raw,
         stats={},
     )
 
-    # --- 产出统计（供自检与文档核对） -------------------------------------- #
     ts_arr = result.ts
     _, counts = np.unique(ts_arr, return_counts=True)
     result.stats = {
@@ -153,14 +119,6 @@ def preprocess(raw: RawEdges) -> ProcessedEdges:
 
 
 def write_processed(pe: ProcessedEdges) -> dict[str, Path]:
-    """写出 TGB 三件套到 ``runs/data/<name>/``。
-
-    - ``ml_<name>.csv``：边表，列 ``,u,i,ts,label,idx``（首列为 pandas 索引列，与参考实现一致）
-    - ``ml_<name>.npy``：边特征 ``(E+1, 172)``，第 0 行为 padding
-    - ``ml_<name>_node.npy``：节点特征 ``(Nmax+1, 172)``，第 0 行为 padding
-
-    另外写出 ``meta_<name>.json`` 记录本次产生的参数与统计，便于回溯。
-    """
     import json
 
     paths = config.processed_paths(pe.name)
@@ -202,7 +160,6 @@ def write_processed(pe: ProcessedEdges) -> dict[str, Path]:
 
 
 def load_processed(name: str) -> pd.DataFrame:
-    """读回已写出的边表（列 ``u,i,ts,label,idx``）。"""
     paths = config.processed_paths(name)
     if not paths["edges"].is_file():
         raise FileNotFoundError(
