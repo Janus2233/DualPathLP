@@ -32,7 +32,7 @@ pip install -r requirements.txt
 
 - GPU 可选：论文实验在单块 6 GB 显存 GPU 上完成；CPU 可运行但更慢（`--device cpu`）。
 - 需要 GPU 时请先按 [pytorch.org](https://pytorch.org) 指引安装与驱动匹配的 CUDA 版 torch，再安装 `torch_geometric`（≥ 2.6 的 GCNConv 使用原生 torch scatter，无需另装 torch_scatter/torch_sparse）。
-- 论文实验所用版本参考：numpy 2.3.5、pandas 2.3.3、scikit-learn 1.7.2、torch 2.x。
+- 论文实验环境（conda 环境实测）：Python 3.13、torch 2.9.0+cu128、torch_geometric 2.7.0、numpy 2.4.4、pandas 3.0.2、scikit-learn 1.9.0。
 
 ## 数据集
 
